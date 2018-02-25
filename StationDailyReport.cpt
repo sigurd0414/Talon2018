@@ -1,0 +1,1215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkBook xmlVersion="20170715" releaseVersion="8.0.0">
+<TableDataMap>
+<TableData name="HistoryHourly" class="com.fr.data.impl.DBTableData">
+<Parameters>
+<Parameter>
+<Attributes name="SDATE"/>
+<O>
+<![CDATA[2018-01-02]]></O>
+</Parameter>
+<Parameter>
+<Attributes name="STATIONID"/>
+<O>
+<![CDATA[4075]]></O>
+</Parameter>
+<Parameter>
+<Attributes name="EDATE"/>
+<O>
+<![CDATA[2018-01-02]]></O>
+</Parameter>
+</Parameters>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[--建立子查詢表DAYDIFFTABLE開始位置
+WITH DAYDIFFTABLE AS (
+
+SELECT a.Station_ID,a.DataSetNo,a.CorVolume,b.CorVolume as YCorVolume,a.DP,a.SP,a.FlowTemp,
+
+a.OldSetPoint,
+
+CONVERT(date,a.[DateTime]A) as YMD,
+
+--取得小時段
+DATEPART(HOUR,a.[DateTime]A) AS HOURLY,
+
+--20180124要求負值報表畫面顯示*****
+--20180126要求超出100萬後重置計算公式
+
+CASE WHEN b.CorVolume is not Null and (b.CorVolume - a.CorVolume) < 0 
+THEN 1000000-a.CorVolume+b.CorVolume 
+WHEN b.CorVolume is Null and (b.CorVolume - a.CorVolume) < 0
+THEN NULL ELSE b.CorVolume - a.CorVolume END
+as HourDiff,
+
+CASE WHEN b.UnCorVolume is not Null and (b.UnCorVolume - a.UnCorVolume) < 0 
+THEN 1000000-a.UnCorVolume+b.UnCorVolume 
+WHEN b.UnCorVolume is Null and (b.UnCorVolume - a.UnCorVolume) < 0
+THEN NULL ELSE b.UnCorVolume - a.UnCorVolume END 
+as UnHourDiff,
+
+--組成唯一碼stationid+datasetno
+CONCAT(a.Station_ID,'_',a.DataSetNo) as UniqueNo
+
+FROM tblHistoryHourly a
+
+left join tblHistoryHourly b
+
+on a.Station_ID=b.Station_ID 
+
+and a.DataSetNo=b.DataSetNo 
+
+--20180119確認時段流量差額為 下一個整點-目前整點 ex: a表23時 = b表隔日00時 -1(時)
+and a.[DateTime]A = dateadd(hh,-1,b.[DateTime]A)
+
+--將參數sdate及edate透過dateadd 轉成datetime格式起日加上0時，迄日加上23時範圍時間
+WHERE a.[DateTime]A BETWEEN DATEADD(hh,0,'${SDATE}') 
+and DATEADD(hh,23,'${EDATE}')
+
+--20180119依客戶需求，避免單一時段兩筆資料，故取整點(分為0的資料)
+--20180128改採彙總方案避免單一時段重複列,註解下列語句
+--and DATEPART(MINUTE,a.[DateTime]A) = 0 and DATEPART(MINUTE,b.[DateTime]A) = 0
+
+--當參數STATIONID有值時加入過濾，無值時不執行過濾
+${if(LEN(STATIONID)==0, "AND 1=2","AND a.Station_ID in ('"+STATIONID+"')")}
+)
+--子查詢表結束位置
+--開始DAYDIFFTABLE與ZoneSite表join
+--2018.01.28為了避免重複時段採同時段相加CorVolume,UnCorVolume
+--其餘同時段採AVG平均計算,SQL SERVER不會計算NULL!
+SELECT c.Station_ID,d.UnitType,
+--判斷A型或B型表
+'TypeAB' = 
+CASE WHEN (d.UnitType = 62533 or d.UnitType = 62534) THEN 'A'
+WHEN (d.UnitType =62531 or d.UnitType=62532 or d.UnitType=62536) THEN 'B'
+END,
+
+c.DataSetNo,c.UniqueNo,d.CusName,d.ZoneID,d.ReportOrder,c.YMD,c.Hourly,
+
+sum(c.HourDiff) as HourDiff,sum(c.UnHourDiff) as UnHourDiff,
+
+avg(c.DP) as DP, avg(c.SP) as SP, avg(c.FlowTemp) as FlowTemp, 
+avg(c.OldSetPoint) as OldSetPoint
+
+FROM DAYDIFFTABLE c
+--子表為了加入公司簡稱
+LEFT JOIN (SELECT x.DataSetNo,x.CusName,x.ReportOrder,x.ZoneID,y.Station_ID,y.UnitType FROM dbo.[tblZoneSite]A x
+		LEFT JOIN dbo.[tblStations]A y
+		ON x.ID = y.SiteID
+		) AS d
+on c.Station_ID=d.Station_ID and c.DataSetNo = d.DataSetNo
+
+group by
+c.Station_ID,d.UnitType,
+CASE WHEN (d.UnitType = 62533 or d.UnitType = 62534) THEN 'A'
+WHEN (d.UnitType =62531 or d.UnitType=62532 or d.UnitType=62536) THEN 'B'
+END,
+c.DataSetNo,c.UniqueNo,d.CusName,d.ZoneID,d.ReportOrder,c.YMD,c.Hourly
+
+order by 
+d.ZoneID,d.ReportOrder, c.Station_ID, c.DataSetNo,c.YMD,c.Hourly]]></Query>
+</TableData>
+<TableData name="ZoneBasic" class="com.fr.data.impl.DBTableData">
+<Parameters/>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[SELECT * FROM dbo.[tblZoneBasic]A]]></Query>
+</TableData>
+<TableData name="Station" class="com.fr.data.impl.DBTableData">
+<Parameters>
+<Parameter>
+<Attributes name="ZONEID"/>
+<O>
+<![CDATA[]]></O>
+</Parameter>
+</Parameters>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[SELECT a.*,b.Station_ID FROM dbo.[tblZoneSite]A a
+LEFT JOIN dbo.[tblStations]A b
+ON a.ID = b.SiteID
+WHERE 1=1
+${IF(LEN(ZONEID)==0,"AND 1=2"," AND a.ZoneID IN ('"+ZONEID+"')")}
+order by a.ReportOrder]]></Query>
+</TableData>
+<TableData name="StationSelected" class="com.fr.data.impl.DBTableData">
+<Parameters/>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[SELECT y.Station_ID,x.DataSetNo,x.CusName,x.ReportOrder,x.ZoneID,CONCAT(y.Station_ID,'_',x.DataSetNo) as UniqueNo FROM dbo.[tblZoneSite]A x
+left join tblStations y
+on y.SiteID = x.ID
+Order By x.ReportOrder,x.ZoneID,x.DataSetNo]]></Query>
+</TableData>
+</TableDataMap>
+<Report class="com.fr.report.worksheet.WorkSheet" name="sheet1">
+<ReportPageAttr>
+<HR F="0" T="6"/>
+<FR/>
+<HC F="0" T="1"/>
+<FC/>
+</ReportPageAttr>
+<ColumnPrivilegeControl/>
+<RowPrivilegeControl/>
+<RowHeight defaultValue="723900">
+<![CDATA[723900,762000,876300,952500,723900,723900,1152000,1152000,1152000,723900,723900]]></RowHeight>
+<ColumnWidth defaultValue="2743200">
+<![CDATA[2880000,2880000,4320000,4320000,4320000,4320000,4320000,4320000,2743200,2743200,2743200]]></ColumnWidth>
+<CellElementList>
+<C c="0" r="0" cs="8" s="0">
+<PrivilegeControl/>
+<CellPageAttr pageBeforeRow="true"/>
+<Expand leftParentDefault="false" left="A4"/>
+</C>
+<C c="0" r="1" cs="8" s="1">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=$ReportTitleA]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[$$$]]></Content>
+</Present>
+<Expand dir="1" leftParentDefault="false" left="A4"/>
+</C>
+<C c="0" r="2" cs="8" s="1">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=CONCATENATE($ReportTitleB, "遙讀計量系統計量日報表")]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand leftParentDefault="false" left="A4"/>
+</C>
+<C c="0" r="3" cs="8" s="1">
+<O t="DSColumn">
+<Attributes dsName="StationSelected" columnName="UniqueNo"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[ZoneID]]></CNAME>
+<Compare op="12">
+<Parameter>
+<Attributes name="ZONEID"/>
+<O>
+<![CDATA[]]></O>
+</Parameter>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=CONCATENATE("站名：(", MAP($$$, "StationSelected", 6, 4), ") ", MAP($$$, "StationSelected", 6, 3))]]></Content>
+</Present>
+<Expand dir="1" leftParentDefault="false" upParentDefault="false"/>
+</C>
+<C c="0" r="4" cs="8" s="2">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[="頁次：" + $$page_number]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="0" r="5" cs="8" s="2">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=CONCATENATE("中華民國", YEAR(TODAY()) - 1911, "年", FORMAT(MONTH(TODAY()), "00"), "月", FORMAT(DAY(TODAY()), "00"), "日")]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="0" r="6" s="3">
+<O>
+<![CDATA[日期]]></O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="1" r="6" s="3">
+<O>
+<![CDATA[時間]]></O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="2" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "靜壓", "B", "靜壓",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4"/>
+</C>
+<C c="3" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "流溫", "B", "流溫",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4" upParentDefault="false" up="A4"/>
+</C>
+<C c="4" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<HighlightList>
+<Highlight class="com.fr.report.cell.cellattr.highlight.DefaultHighlight">
+<Name>
+<![CDATA[條件屬性1]]></Name>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.ObjectCondition">
+<Compare op="0">
+<O>
+<![CDATA[B]]></O>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="1">
+<Condition class="com.fr.data.condition.FormulaCondition">
+<Formula>
+<![CDATA[len($$$)==0]]></Formula>
+</Condition>
+</JoinCondition>
+</Condition>
+<HighlightAction class="com.fr.report.cell.cellattr.highlight.ColWidthHighlightAction"/>
+</Highlight>
+<Highlight class="com.fr.report.cell.cellattr.highlight.DefaultHighlight">
+<Name>
+<![CDATA[條件屬性2]]></Name>
+<Condition class="com.fr.data.condition.ObjectCondition">
+<Compare op="0">
+<O>
+<![CDATA[A]]></O>
+</Compare>
+</Condition>
+<HighlightAction class="com.fr.report.cell.cellattr.highlight.ColWidthHighlightAction">
+<ColumnWidth i="4320000"/>
+</HighlightAction>
+</Highlight>
+</HighlightList>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "差壓", "B", "差壓",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4"/>
+</C>
+<C c="5" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "C'", "B", "C'",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4" upParentDefault="false" up="A4"/>
+</C>
+<C c="6" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<HighlightList>
+<Highlight class="com.fr.report.cell.cellattr.highlight.DefaultHighlight">
+<Name>
+<![CDATA[條件屬性1]]></Name>
+<Condition class="com.fr.data.condition.ObjectCondition">
+<Compare op="0">
+<O>
+<![CDATA[A]]></O>
+</Compare>
+</Condition>
+<HighlightAction class="com.fr.report.cell.cellattr.highlight.ColWidthHighlightAction"/>
+</Highlight>
+<Highlight class="com.fr.report.cell.cellattr.highlight.DefaultHighlight">
+<Name>
+<![CDATA[條件屬性2]]></Name>
+<Condition class="com.fr.data.condition.ObjectCondition">
+<Compare op="0">
+<O>
+<![CDATA[B]]></O>
+</Compare>
+</Condition>
+<HighlightAction class="com.fr.report.cell.cellattr.highlight.ColWidthHighlightAction">
+<ColumnWidth i="4320000"/>
+</HighlightAction>
+</Highlight>
+</HighlightList>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "非校正量", "B", "非校正量",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4"/>
+</C>
+<C c="7" r="6" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="TypeAB"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=switch($$$, "A", "校正量", "B", "校正量",NULL,"*****")]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4" upParentDefault="false" up="A4"/>
+</C>
+<C c="0" r="7" rs="2" s="3">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="YMD"/>
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<HighlightList>
+<Highlight class="com.fr.report.cell.cellattr.highlight.DefaultHighlight">
+<Name>
+<![CDATA[條件屬性1]]></Name>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.ObjectCondition">
+<Compare op="1">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=$EDATE]]></Attributes>
+</O>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.FormulaCondition">
+<Formula>
+<![CDATA[LEN($$$)>0]]></Formula>
+</Condition>
+</JoinCondition>
+</Condition>
+<HighlightAction class="com.fr.report.cell.cellattr.highlight.PageHighlightAction">
+<P i="1"/>
+</HighlightAction>
+</Highlight>
+</HighlightList>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",CONCATENATE(YEAR($$$) - 1911, "年\n", FORMAT(MONTH($$$), "00"), "/", FORMAT(DAY($$$), "00")))]]></Content>
+</Present>
+<Expand dir="0" leftParentDefault="false" left="A4"/>
+</C>
+<C c="1" r="7" s="3">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=RANGE(0,23)]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",CONCATENATE(FORMAT($$$, "00"), "-", FORMAT(IF($$$ = 23, 0, $$$ + 1), "00")))]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="2" r="7" s="4">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="SP"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="3" r="7" s="4">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="FlowTemp"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="4" r="7" s="4">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="DP"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="5" r="7" s="5">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="OldSetPoint"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Result>
+<![CDATA[$$$]]></Result>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="6" r="7" s="6">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="UnHourDiff"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Result>
+<![CDATA[$$$]]></Result>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="7" r="7" s="6">
+<O t="DSColumn">
+<Attributes dsName="HistoryHourly" columnName="HourDiff"/>
+<Condition class="com.fr.data.condition.ListCondition">
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[UniqueNo]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="3"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[YMD]]></CNAME>
+<Compare op="0">
+<ColumnRow column="0" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+<JoinCondition join="0">
+<Condition class="com.fr.data.condition.CommonCondition">
+<CNUMBER>
+<![CDATA[0]]></CNUMBER>
+<CNAME>
+<![CDATA[Hourly]]></CNAME>
+<Compare op="0">
+<ColumnRow column="1" row="7"/>
+</Compare>
+</Condition>
+</JoinCondition>
+</Condition>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Result>
+<![CDATA[$$$]]></Result>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"*****",$$$)]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="1" r="8" s="3">
+<O>
+<![CDATA[平均/合計]]></O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="2" r="8" s="4">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(C8)==0,"*****",AVERAGE(C8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="3" r="8" s="4">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(D8)==0,"*****",AVERAGE(D8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="4" r="8" s="4">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(E8)==0,"*****",AVERAGE(E8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="5" r="8" s="5">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(F8)==0,"*****",AVERAGE(F8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="6" r="8" s="6">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(G8)==0,"*****",SUM(G8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="7" r="8" s="6">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(COUNT(H8)==0,"*****",SUM(H8))]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+</CellElementList>
+<ReportAttrSet>
+<ReportSettings headerHeight="0" footerHeight="1440000">
+<PaperSetting>
+<Margin top="432000" left="432000" bottom="432000" right="432000"/>
+</PaperSetting>
+</ReportSettings>
+<Header reportPageType="0">
+<Background name="NullBackground"/>
+<LeftList/>
+<CenterList/>
+<RightList/>
+</Header>
+<Footer reportPageType="0">
+<Background name="NullBackground"/>
+<LeftList>
+<HFElement className="com.fr.base.headerfooter.TextHFElement">
+<FRFont name="Microsoft JhengHei UI" style="0" size="88"/>
+<![CDATA[製表：                                  領班：                              複核：                                 經理：]]></HFElement>
+</LeftList>
+<CenterList/>
+<RightList/>
+</Footer>
+</ReportAttrSet>
+<PrivilegeControl/>
+</Report>
+<ReportParameterAttr>
+<Attributes showWindow="true" delayPlaying="true" windowPosition="1" align="0"/>
+<PWTitle>
+<![CDATA[參數]]></PWTitle>
+<ParameterUI class="com.fr.form.main.parameter.FormParameterUI">
+<Parameters/>
+<Layout class="com.fr.form.ui.container.WParameterLayout">
+<WidgetName name="para"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Margin top="0" left="0" bottom="0" right="0"/>
+<Border>
+<border style="0" color="-723724" borderRadius="0" type="0" borderStyle="0"/>
+<WidgetTitle>
+<O>
+<![CDATA[新增標題]]></O>
+<FRFont name="Dialog" style="0" size="72"/>
+<Position pos="0"/>
+</WidgetTitle>
+<Alpha alpha="1.0"/>
+</Border>
+<Background name="ColorBackground" color="-1118482"/>
+<LCAttr vgap="0" hgap="0" compInterval="0"/>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.FreeButton">
+<Listener event="click">
+<JavaScript class="com.fr.js.JavaScriptImpl">
+<Parameters>
+<Parameter>
+<Attributes name="cptname"/>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=reportName]]></Attributes>
+</O>
+</Parameter>
+<Parameter>
+<Attributes name="printer"/>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=$DefaultPrinter]]></Attributes>
+</O>
+</Parameter>
+<Parameter>
+<Attributes name="frurl"/>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=serverURL+servletURL]]></Attributes>
+</O>
+</Parameter>
+</Parameters>
+<Content>
+<![CDATA[var SDATE = this.getWidgetByName("SDATE").getValue();
+var EDATE = this.getWidgetByName("EDATE").getValue();
+var STATIONID = this.getWidgetByName("STATIONID").getValue();
+FR.doNativePrint({  
+//是否弹窗  
+isPopUp:false,  
+//打印指定页面1,3,5-6  
+index:0,  
+//打印份数  
+copies:1,  
+//指定打印机  
+printerName:printer,  
+//需要打印的报表url  
+url:frurl+"?reportlet="+cptname+"&SDATE="+SDATE+"&EDATE="+EDATE+"&STATIONID="+STATIONID
+});  ]]></Content>
+</JavaScript>
+</Listener>
+<WidgetName name="button0_c_c_c"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Text>
+<![CDATA[直接列印]]></Text>
+</InnerWidget>
+<BoundsAttr x="399" y="44" width="80" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.ComboCheckBox">
+<WidgetName name="ZONEID"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Dictionary class="com.fr.data.impl.TableDataDictionary">
+<FormulaDictAttr kiName="ZoneID" viName="ZoneShortName"/>
+<TableDataDictAttr>
+<TableData class="com.fr.data.impl.NameTableData">
+<Name>
+<![CDATA[ZoneBasic]]></Name>
+</TableData>
+</TableDataDictAttr>
+</Dictionary>
+<widgetValue/>
+<RAAttr delimiter="&apos;,&apos;" isArray="false"/>
+</InnerWidget>
+<BoundsAttr x="77" y="7" width="196" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label1"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[至]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="SimSun" style="0" size="72"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="472" y="7" width="33" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0_c_c"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[報表日期：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="291" y="7" width="77" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.DateEditor">
+<WidgetName name="EDATE"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<DateAttr/>
+<widgetValue>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=TODAY()-1]]></Attributes>
+</O>
+</widgetValue>
+</InnerWidget>
+<BoundsAttr x="505" y="7" width="118" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.DateEditor">
+<WidgetName name="SDATE"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<DateAttr/>
+<widgetValue>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=TODAY()-1]]></Attributes>
+</O>
+</widgetValue>
+</InnerWidget>
+<BoundsAttr x="368" y="7" width="104" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.ComboCheckBox">
+<WidgetName name="STATIONID"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Dictionary class="com.fr.data.impl.TableDataDictionary">
+<FormulaDictAttr kiName="Station_ID" viName="CusName"/>
+<TableDataDictAttr>
+<TableData class="com.fr.data.impl.NameTableData">
+<Name>
+<![CDATA[Station]]></Name>
+</TableData>
+</TableDataDictAttr>
+</Dictionary>
+<widgetValue>
+<databinding>
+<![CDATA[{Name:Station,Key:Station_ID}]]></databinding>
+</widgetValue>
+<RAAttr delimiter="&apos;,&apos;" isArray="false"/>
+</InnerWidget>
+<BoundsAttr x="77" y="44" width="196" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.parameter.FormSubmitButton">
+<WidgetName name="formSubmit0"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Text>
+<![CDATA[查詢]]></Text>
+<Hotkeys>
+<![CDATA[enter]]></Hotkeys>
+</InnerWidget>
+<BoundsAttr x="291" y="44" width="80" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0_c"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[用戶：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="23" y="44" width="54" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[管線：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="23" y="7" width="54" height="21"/>
+</Widget>
+<Sorted sorted="false"/>
+<MobileWidgetList>
+<Widget widgetName="ZONEID"/>
+<Widget widgetName="SDATE"/>
+<Widget widgetName="EDATE"/>
+<Widget widgetName="STATIONID"/>
+<Widget widgetName="formSubmit0"/>
+<Widget widgetName="button0_c_c_c"/>
+</MobileWidgetList>
+<Display display="true"/>
+<DelayDisplayContent delay="true"/>
+<Position position="0"/>
+<Design_Width design_width="960"/>
+<NameTagModified/>
+<WidgetNameTagMap>
+<NameTag name="SDATE" tag="報表日期："/>
+<NameTag name="ZONEID" tag="管線："/>
+<NameTag name="STATIONID" tag="用戶："/>
+<NameTag name="EDATE" tag="至"/>
+</WidgetNameTagMap>
+</Layout>
+<DesignAttr width="960" height="73"/>
+</ParameterUI>
+</ReportParameterAttr>
+<StyleList>
+<Style imageLayout="1">
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<Background name="NullBackground"/>
+<Border/>
+</Style>
+<Style horizontal_alignment="0" imageLayout="1">
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<Background name="NullBackground"/>
+<Border/>
+</Style>
+<Style horizontal_alignment="4" imageLayout="1">
+<FRFont name="微軟正黑體" style="0" size="80"/>
+<Background name="NullBackground"/>
+<Border/>
+</Style>
+<Style horizontal_alignment="0" imageLayout="1">
+<FRFont name="微軟正黑體" style="0" size="80"/>
+<Background name="NullBackground"/>
+<Border>
+<Top style="1" color="-16777216"/>
+<Bottom style="1" color="-16777216"/>
+<Left style="1" color="-16777216"/>
+<Right style="1" color="-16777216"/>
+</Border>
+</Style>
+<Style imageLayout="1" paddingRight="5">
+<Format class="com.fr.base.CoreDecimalFormat">
+<![CDATA[#0.00]]></Format>
+<FRFont name="微軟正黑體" style="0" size="80"/>
+<Background name="NullBackground"/>
+<Border>
+<Top style="1"/>
+<Bottom style="1"/>
+<Left style="1"/>
+<Right style="1"/>
+</Border>
+</Style>
+<Style horizontal_alignment="4" imageLayout="1" paddingRight="5">
+<Format class="com.fr.base.CoreDecimalFormat">
+<![CDATA[#0.00]]></Format>
+<FRFont name="微軟正黑體" style="0" size="80"/>
+<Background name="NullBackground"/>
+<Border>
+<Top style="1"/>
+<Bottom style="1"/>
+<Left style="1"/>
+<Right style="1"/>
+</Border>
+</Style>
+<Style horizontal_alignment="4" imageLayout="1" paddingRight="5">
+<FRFont name="微軟正黑體" style="0" size="80"/>
+<Background name="NullBackground"/>
+<Border>
+<Top style="1"/>
+<Bottom style="1"/>
+<Left style="1"/>
+<Right style="1"/>
+</Border>
+</Style>
+</StyleList>
+<DesignerVersion DesignerVersion="IAA"/>
+<PreviewType PreviewType="0"/>
+<TemplateID TemplateID="bad675d2-de72-41d7-a2d8-a14100dab069"/>
+</WorkBook>

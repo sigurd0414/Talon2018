@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkBook xmlVersion="20170715" releaseVersion="8.0.0">
+<TableDataMap>
+<TableData name="HistoryDaily" class="com.fr.data.impl.DBTableData">
+<Parameters>
+<Parameter>
+<Attributes name="SDATE"/>
+<O>
+<![CDATA[2018-01-30]]></O>
+</Parameter>
+<Parameter>
+<Attributes name="STATIONID"/>
+<O>
+<![CDATA[4140]]></O>
+</Parameter>
+</Parameters>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[--建立子查詢表DAYDIFFTABLE開始位置
+WITH DAYDIFFTABLE AS (
+
+SELECT a.Station_ID,a.DataSetNo,a.CorVolume,b.CorVolume as YCorVolume,
+
+CONVERT(date,a.[DateTime]A) as YMD,
+
+--20180124要求負值報表畫面顯示*****
+--20180126要求超出100萬後重置計算公式
+CASE WHEN b.CorVolume is not Null and (b.CorVolume - a.CorVolume) < 0 
+THEN 1000000-a.CorVolume+b.CorVolume 
+WHEN b.CorVolume is Null and (b.CorVolume - a.CorVolume) < 0
+THEN NULL ELSE b.CorVolume - a.CorVolume END 
+as DayDiff
+
+FROM tblHistoryDaily a
+
+left join tblHistoryDaily b
+
+on a.Station_ID=b.Station_ID 
+
+and a.DataSetNo=b.DataSetNo 
+
+--當日流量為下一日-當日EX:a表 1/11 = b表 1/12 -1
+and a.[DateTime]A = dateadd(dd,-1,b.[DateTime]A)
+
+WHERE a.[DateTime]A between DATEADD(dd,0,'${SDATE}')
+and DATEADD(hh,23,'${SDATE}')
+
+--20180119依客戶需求，避免單一日期兩筆資料，故取hour為0的資料，因會有單日多筆的異常資料發生。
+--20180128改採彙總方案避免單一時段重複列,註解下列語句
+--and DATEPART(HOUR, a.[DateTime]A) = 0 and DATEPART(HOUR, b.[DateTime]A) = 0
+
+--當參數STATIONID有值時加入過濾，無值時不執行過濾
+${if(LEN(STATIONID)==0, "AND 1=1","AND a.Station_ID in ('"+STATIONID+"')")}
+)
+
+--子查詢表結束位置
+--開始DAYDIFFTABLE與ZoneSite表join
+SELECT d.ReportOrder,c.Station_ID,d.StationNumber,c.YMD,sum(c.DayDiff) as AllDiff
+FROM DAYDIFFTABLE c
+
+--20180206子表為了加入客戶編號及報表順序，因雙線合併計算故取datasetno=1
+LEFT JOIN (SELECT x.DataSetNo,x.CusName,x.ReportOrder,x.ZoneID,y.Station_ID,y.StationNumber FROM dbo.[tblZoneSite]A x
+LEFT JOIN dbo.[tblStations]A y
+ON x.ID = y.SiteID
+WHERE x.DataSetNo=1
+) AS d
+on c.Station_ID=d.Station_ID
+where c.DayDiff is not null
+GROUP BY d.ReportOrder,c.Station_id,d.StationNumber,c.YMD
+order by 
+d.ReportOrder,c.Station_ID,c.YMD
+]]></Query>
+</TableData>
+<TableData name="ZoneBasic" class="com.fr.data.impl.DBTableData">
+<Parameters/>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[SELECT * FROM dbo.[tblZoneBasic]A]]></Query>
+</TableData>
+<TableData name="Station" class="com.fr.data.impl.DBTableData">
+<Parameters>
+<Parameter>
+<Attributes name="ZONEID"/>
+<O>
+<![CDATA[G23]]></O>
+</Parameter>
+</Parameters>
+<Attributes maxMemRowCount="-1"/>
+<Connection class="com.fr.data.impl.NameDatabaseConnection">
+<DatabaseName>
+<![CDATA[Talon]]></DatabaseName>
+</Connection>
+<Query>
+<![CDATA[SELECT a.*,b.Station_ID FROM dbo.[tblZoneSite]A a
+LEFT JOIN dbo.[tblStations]A b
+ON a.ID = b.SiteID
+WHERE 1=1
+${IF(LEN(ZONEID)==0,"AND 1=2"," AND a.ZoneID IN ('"+ZONEID+"')")}
+order by a.ReportOrder]]></Query>
+</TableData>
+</TableDataMap>
+<ReportWebAttr>
+<ServerPrinter/>
+</ReportWebAttr>
+<Report class="com.fr.report.worksheet.WorkSheet" name="sheet1">
+<ReportPageAttr>
+<HR/>
+<FR/>
+<HC/>
+<FC/>
+</ReportPageAttr>
+<ColumnPrivilegeControl/>
+<RowPrivilegeControl/>
+<RowHeight defaultValue="723900">
+<![CDATA[723900,723900,723900,723900,723900,723900,723900,723900,723900,723900,723900]]></RowHeight>
+<ColumnWidth defaultValue="2743200">
+<![CDATA[2743200,2743200,2743200,2743200,2743200,2743200,2743200,2743200,2743200,2743200,2743200]]></ColumnWidth>
+<CellElementList>
+<C c="0" r="0">
+<O t="DSColumn">
+<Attributes dsName="HistoryDaily" columnName="Station_ID"/>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper">
+<Attr divideMode="1"/>
+</RG>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Present class="com.fr.base.present.FormulaPresent">
+<Content>
+<![CDATA[=IF(LEN($$$)==0,"未設定",MAP($$$,"HistoryDaily",2,3))]]></Content>
+</Present>
+<Expand dir="0"/>
+</C>
+<C c="1" r="0" s="0">
+<O t="DSColumn">
+<Attributes dsName="HistoryDaily" columnName="YMD"/>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Expand dir="0"/>
+</C>
+<C c="2" r="0">
+<O t="DSColumn">
+<Attributes dsName="HistoryDaily" columnName="AllDiff"/>
+<Complex/>
+<RG class="com.fr.report.cell.cellattr.core.group.FunctionGrouper"/>
+<Parameters/>
+</O>
+<PrivilegeControl/>
+<Expand dir="0"/>
+</C>
+<C c="3" r="0">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(LEN(A1) > 0, 0, NULL)]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+<C c="4" r="0">
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=IF(LEN(A1) > 0, "L202G", NULL)]]></Attributes>
+</O>
+<PrivilegeControl/>
+<Expand/>
+</C>
+</CellElementList>
+<ReportAttrSet>
+<ReportSettings headerHeight="0" footerHeight="0">
+<PaperSetting>
+<Margin top="720000" left="720000" bottom="720000" right="720000"/>
+</PaperSetting>
+</ReportSettings>
+<Header reportPageType="0">
+<Background name="NullBackground"/>
+<LeftList/>
+<CenterList/>
+<RightList/>
+</Header>
+<Footer reportPageType="0">
+<Background name="NullBackground"/>
+<LeftList/>
+<CenterList/>
+<RightList/>
+</Footer>
+</ReportAttrSet>
+<PrivilegeControl/>
+</Report>
+<ReportParameterAttr>
+<Attributes showWindow="true" delayPlaying="true" windowPosition="1" align="0"/>
+<PWTitle>
+<![CDATA[參數]]></PWTitle>
+<ParameterUI class="com.fr.form.main.parameter.FormParameterUI">
+<Parameters/>
+<Layout class="com.fr.form.ui.container.WParameterLayout">
+<WidgetName name="para"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Margin top="0" left="0" bottom="0" right="0"/>
+<Border>
+<border style="0" color="-723724" borderRadius="0" type="0" borderStyle="0"/>
+<WidgetTitle>
+<O>
+<![CDATA[新增標題]]></O>
+<FRFont name="Dialog" style="0" size="72"/>
+<Position pos="0"/>
+</WidgetTitle>
+<Alpha alpha="1.0"/>
+</Border>
+<Background name="ColorBackground" color="-1118482"/>
+<LCAttr vgap="0" hgap="0" compInterval="0"/>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.FreeButton">
+<Listener event="click">
+<JavaScript class="com.fr.js.JavaScriptImpl">
+<Parameters>
+<Parameter>
+<Attributes name="cptname"/>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=reportName]]></Attributes>
+</O>
+</Parameter>
+</Parameters>
+<Content>
+<![CDATA[//windows.open("${servletURL}?reportlet=test.cpt&__filename__=test&format=word");
+var exportdate = this.options.form.getWidgetByName("SDATE").getValue();
+window.location="${servletURL}?reportlet="+cptname+"&SDATE="+exportdate+"&format=excel";]]></Content>
+</JavaScript>
+</Listener>
+<WidgetName name="button0"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Text>
+<![CDATA[匯出excel]]></Text>
+</InnerWidget>
+<BoundsAttr x="392" y="44" width="80" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.ComboCheckBox">
+<WidgetName name="ZONEID"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Dictionary class="com.fr.data.impl.TableDataDictionary">
+<FormulaDictAttr kiName="ZoneID" viName="ZoneShortName"/>
+<TableDataDictAttr>
+<TableData class="com.fr.data.impl.NameTableData">
+<Name>
+<![CDATA[ZoneBasic]]></Name>
+</TableData>
+</TableDataDictAttr>
+</Dictionary>
+<widgetValue/>
+<RAAttr delimiter="&apos;,&apos;" isArray="false"/>
+</InnerWidget>
+<BoundsAttr x="77" y="7" width="196" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0_c_c"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[日期：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="291" y="7" width="77" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.DateEditor">
+<WidgetName name="SDATE"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<DateAttr/>
+<widgetValue>
+<O t="Formula" class="Formula">
+<Attributes>
+<![CDATA[=today()-1]]></Attributes>
+</O>
+</widgetValue>
+</InnerWidget>
+<BoundsAttr x="368" y="7" width="104" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.ComboCheckBox">
+<WidgetName name="STATIONID"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Dictionary class="com.fr.data.impl.TableDataDictionary">
+<FormulaDictAttr kiName="Station_ID" viName="CusName"/>
+<TableDataDictAttr>
+<TableData class="com.fr.data.impl.NameTableData">
+<Name>
+<![CDATA[Station]]></Name>
+</TableData>
+</TableDataDictAttr>
+</Dictionary>
+<widgetValue/>
+<RAAttr delimiter="&apos;,&apos;" isArray="false"/>
+</InnerWidget>
+<BoundsAttr x="77" y="44" width="196" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.parameter.FormSubmitButton">
+<WidgetName name="formSubmit0"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<Text>
+<![CDATA[查詢]]></Text>
+<Hotkeys>
+<![CDATA[enter]]></Hotkeys>
+</InnerWidget>
+<BoundsAttr x="291" y="44" width="80" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0_c"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[用戶：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="23" y="44" width="54" height="21"/>
+</Widget>
+<Widget class="com.fr.form.ui.container.WAbsoluteLayout$BoundsWidget">
+<InnerWidget class="com.fr.form.ui.Label">
+<WidgetName name="label0"/>
+<WidgetAttr description="">
+<PrivilegeControl/>
+</WidgetAttr>
+<widgetValue>
+<O>
+<![CDATA[管線：]]></O>
+</widgetValue>
+<LabelAttr verticalcenter="true" textalign="0" autoline="true"/>
+<FRFont name="微軟正黑體" style="0" size="88"/>
+<border style="0" color="-723724"/>
+</InnerWidget>
+<BoundsAttr x="23" y="7" width="54" height="21"/>
+</Widget>
+<Sorted sorted="false"/>
+<MobileWidgetList>
+<Widget widgetName="ZONEID"/>
+<Widget widgetName="SDATE"/>
+<Widget widgetName="STATIONID"/>
+<Widget widgetName="formSubmit0"/>
+<Widget widgetName="button0"/>
+</MobileWidgetList>
+<Display display="true"/>
+<DelayDisplayContent delay="true"/>
+<Position position="0"/>
+<Design_Width design_width="960"/>
+<NameTagModified/>
+<WidgetNameTagMap>
+<NameTag name="SDATE" tag="日期："/>
+<NameTag name="formSubmit0" tag="用戶："/>
+<NameTag name="ZONEID" tag="管線："/>
+<NameTag name="STATIONID" tag="用戶："/>
+</WidgetNameTagMap>
+</Layout>
+<DesignAttr width="960" height="73"/>
+</ParameterUI>
+</ReportParameterAttr>
+<StyleList>
+<Style imageLayout="1">
+<Format class="com.fr.base.SimpleDateFormatThreadSafe">
+<![CDATA[yyyy/MM/dd]]></Format>
+<FRFont name="Dialog" style="0" size="72"/>
+<Background name="NullBackground"/>
+<Border/>
+</Style>
+</StyleList>
+<DesignerVersion DesignerVersion="IAA"/>
+<PreviewType PreviewType="0"/>
+<TemplateID TemplateID="f1c87d35-ec57-4320-be1e-bdacaf028d01"/>
+</WorkBook>
